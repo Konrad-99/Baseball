@@ -1,0 +1,367 @@
+---
+title: "Do characteristics that predict MLB regular season success translate in the post-season?"
+author: "James Richards"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+  bookdown::pdf_document2:
+    toc: no
+  html_document:
+    toc: no
+    df_print: paged
+subtitle: An analysis of what physical characteristics can be used to predict a batters' success in the regular and post season
+abstract: Although baseball as a sport has over 100 years of statistical history and has already been extensively analyzed, I decided it would be interesting to see if a regression model measuring players batting in the regular season would match their playoff batting success when solely predicted through their physical characteristics (such as height, weight, handedness, etc.).  This paper does an in-depth exploration of the physical characteristics of MLB players from the 1871 to 2021 and measures them against their on-base plus slugging percentage (OPS) in the regular season and playoffs through the use of multiple linear regression models with different predictors.  Using ANOVA tables and likelihood ratio tests, predictors were gradually removed from the base models until models that best explained the relationship between a players physical characteristics and their batting prowess in the regular and post season was discovered. After this relationship was discovered, their implication was discussed.
+header-includes: #allows you to add in your own Latex packages
+- \usepackage{float} #use the 'float' package
+- \floatplacement{figure}{H} 
+- \usepackage{longtable}
+thanks: 'Code and data are available at: [github.com/Konrad-99/Baseball](https://github.com/Konrad-99/Baseball).'
+bibliography: [Baseball_References.bib]
+nocite: '@*'
+---
+
+\listoffigures
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(reshape2)
+library(dplyr)
+library(kableExtra)
+library(rstatix)
+library(car)
+library(broom)
+library(ggplot2)
+library(Lahman)
+```
+
+```{r, echo = FALSE}
+#Installing data
+Batting <- Batting
+People <- People
+Batting_post <- BattingPost
+```
+
+```{r, echo = FALSE}
+## Combining data
+Data <- left_join(People, Batting, by = "playerID")
+```
+
+```{r, echo = FALSE}
+## Calculating OPS and age
+Data$OBP <- ((Data$H + Data$BB + Data$HBP)/(Data$AB + Data$BB + Data$HBP + Data$SF))
+
+Data$SLG <- ((Data$H + (2 * Data$`X2B`) + (3 * Data$`X3B`) + (4 * Data$HR))/(Data$AB))
+
+Data$OPS <- Data$OBP + Data$SLG
+
+Data$Age <- (Data$yearID - Data$birthYear)
+```
+
+```{r, echo = FALSE}
+## Removing NA and 0 for certain variables
+Data <- Data[Data$AB >= 502, ]
+Data <- Data[!is.na(Data$OPS),]
+Data <- Data[!is.na(Data$Age),]
+Data <- Data[!is.na(Data$weight),]
+Data <- Data[!is.na(Data$height),]
+Data <- Data[!is.na(Data$bats),]
+Data <- Data[!is.na(Data$throws),]
+```
+
+```{r, echo = FALSE}
+## Saving players used
+player_id_list <- list(Data$playerID)
+```
+
+```{r, echo = FALSE}
+## Keeping data to be used
+Data = subset(Data, select = c("Age", "weight", "height", "bats", "throws", "OPS"))
+```
+
+```{r, echo = FALSE}
+## Combining data
+Data_post <- left_join(People, Batting_post, by = "playerID")
+```
+
+```{r, echo = FALSE}
+## Calculating OPS and age
+Data_post$OBP <- ((Data_post$H + Data_post$BB + Data_post$HBP)/(Data_post$AB + Data_post$BB + Data_post$HBP + Data_post$SF))
+
+Data_post$SLG <- ((Data_post$H + (2 * Data_post$`X2B`) + (3 * Data_post$`X3B`) + (4 * Data_post$HR))/(Data_post$AB))
+
+Data_post$OPS <- Data_post$OBP + Data_post$SLG
+
+Data_post$Age <- (Data_post$yearID - Data_post$birthYear)
+```
+
+```{r, echo = FALSE}
+## Removing NA and 0 for certain variables
+Data_post <- Data_post[! Data_post$playerID %in% player_id_list, ]
+Data_post <- Data_post[!is.na(Data_post$OPS),]
+Data_post <- Data_post[!is.na(Data_post$Age),]
+Data_post <- Data_post[!is.na(Data_post$weight),]
+Data_post <- Data_post[!is.na(Data_post$height),]
+Data_post <- Data_post[!is.na(Data_post$bats),]
+Data_post <- Data_post[!is.na(Data_post$throws),]
+```
+
+```{r, echo = FALSE}
+## Keeping data to be used
+Data_post = subset(Data_post, select = c("Age", "weight", "height", "bats", "throws", "OPS"))
+```
+
+\newpage
+
+
+
+# Introduction
+|    “A young man named Abner Doubleday invented the game known as baseball in Cooperstown, New York, during the summer of 1839. Doubleday then went on to become a Civil War hero, while baseball became America’s beloved national pastime” [@citehistory].  Unfortunately, as good as this story may sound, it was later found to be untrue [@citehistory].  What is true, however, is that an Englishman by the name of Henry Chadwick was the first to start recording statistics of players’ and teams’ performance in 1859 with the introduction of box scores [@citehenry].  Since then, baseball has been at the forefront of sports analytics with teams using extensive statistics to determine who they want on their team and how much they are willing to pay them.  This study will explore players’ physical characteristics to determine what characteristics increase or decrease a players likelihood of being a good batter, which will be measured by OPS, the sum of a player's on-base and slugging percentage [@citestats]. On-base percentage measures the frequency of a player reaching a base each time they go up to bat while slugging percentage measures the total number of bases a player records per at bat [@citestats].  According to most players, OPS is the most important statistic when it comes to measuring a batters efficiency as it rewards players who get on base often as well as those who are sluggers [@citestats].  In order to determine what characteristics are important for good batters in the regular and post season, a multiple linear regression model will be fitted using the data after which ANOVA tables and likelihood ratio tests will be used to determine if any variables can be removed from the model to better fit the data.
+
+
+
+
+# Data
+|    In order to conduct this analysis, the R programming language [@citeR] was used, with the `tidyverse` [@citetidyverse], `janitor` [@citejanitor], `dplyr` [@citedplyr] and `reshape2` [@citereshape2] packages being used for data cleaning and manipulation. In order to create and display graphs and tables, the `ggplot2` [@citeggplot2], `car` [@citecar], `broom` [@citebroom] and `kableExtra` [@citekableExtra] packages were used. Finally, the `knitr` [@citeknitr] and `bookdown` [@citebookdown] package was used to knit the markdown file and produce a pdf copy.
+
+|    Initially, when searching for data to use in this paper, I attempted to use data from the MLB website as I believed they would have an extensive source of free statistics to use, however, they did not and I was forced to search elsewhere.  The data used in this research paper is from Lahman's Baseball Database, a free database that contains pitching, hitting, and fielding stats for Major League Baseball from 1871 to 2021 [@citeLahman].  Moreover, the database includes statistics from both the National and American league as well as any leagues formed before that [@citeLahman].  The website was initially formed in 1994 by Sean Lahman in order to provide free baseball statistics to the public and currently they have a dedicated team that have no formed the most extensive source of baseball statistics available to the public [@citeLahman].  The 2021 version of the dataset contains 28 tables measuring varying statistics, however, in this case only the batting and people tables were used for both regular and post season stats.  The player table contains data measuring player's physical attributes as well as career information.  In the case of the batting table, it measures each players' batting stats in every season played as well as the team they played for.  To use this data, download the `Lahman` [@citeLahman] package. Unfortunately, however, it did not include OBP, SLG or OPS which resulted in myself calculating them.  The following are the formulas used to calculate each stat:
+
+* $OBP = \frac{H + BB + HBP}{AB + BB + HBP + SF}$
+* $SLG = \frac{H + (2*2B) + (3*3B) + (4*HR)}{AB}$
+* $OPS = OBP + SLG$
+
+After calculating the OBP, SLG and OPS for each player, the two tables were combined using the left_join() function and any observations containing NA were removed.  Additionally, when looking at the OPS and AB values, it became evident that the data was skewed as there were too many high OPS values due to low at bats for the large majority of players.  This led to the creation of a cutoff for measuring OPS in which a player had to have at bat at least 502 times, the same amount a player needs to compete for a hitting title [@citehits].  For the post season, I removed all players that did not make the cut in the regular season.  Once ready, any variables not being used were removed which left the following two datasets:
+
+```{r, echo = FALSE, fig.cap = "regular and post season datasets"}
+##generating table sample
+table1 <- kable(tail(Data, 5), booktabs = TRUE, caption = "The first 5 rows of the final OPS dataset for regular season")
+table1 %>%
+  kable_styling(latex_options = "HOLD_position")
+
+table1_post <- kable(tail(Data_post, 5), booktabs = TRUE, caption = "The first 5 rows of the final OPS dataset for post season")
+table1 %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r, echo = FALSE}
+##Splitting data sets into test and training datasets
+set.seed(101)
+#Regular season train and test dataset
+dt_reg = sort(sample(nrow(Data), nrow(Data)*.5))
+train_reg <- Data[dt_reg,]
+test_reg <- Data[-dt_reg,]
+
+train_reg <- data.frame(train_reg)
+test_reg <- data.frame(test_reg)
+
+#Post season train and test dataset
+dt_post = sort(sample(nrow(Data_post), nrow(Data_post)*.5))
+train_post <- Data_post[dt_post,]
+test_post <- Data_post[-dt_post,]
+
+train_post <- data.frame(train_post)
+test_post <- data.frame(test_post)
+```
+
+```{r, echo = FALSE}
+##Creating base models
+Base_Model_Reg <- lm(`OPS` ~ `Age` + `weight` + `height` + `bats` + `throws`, data = train_reg)
+
+Base_Model_Post <- lm(`OPS` ~ `Age` + `weight` + `height` + `bats` + `throws`, data = train_post)
+```
+
+
+# Model
+|    For this study two models were created, one for the regular season data and one for the post season data. In each case, a multi-linear regression model will be fitted to the data.  Firstly, I split each dataset into a testing and training dataset with a 50/50 split while performing an EDA on all the datasets.  Following this, I checked whether the quantitative variables in both training datasets satisfied conditions I & II through residual scatterplots and qqplots.  Once this was done, base models for both the post and regular season were created and are as follows:
+
+- Regular Season Model
+  - $OPS=\beta_0+\beta_1*Age+\beta_2*Weight+\beta_3*Height+\beta_4*BatsL+\beta_5*BatsR+\beta_6*BatsB+\beta_7*ThrowsL+\beta_8*ThrowsR$
+
+- Post Season Model
+  - $OPS=\beta_0+\beta_1*Age+\beta_2*Weight+\beta_3*Height+\beta_4*BatsL+\beta_5*BatsR+\beta_6*BatsB+\beta_7*ThrowsL+\beta_8*ThrowsR$
+
+In order to check the Linearity, Uncorrelated Errors, Common Error Variance, and Normality of Errors assumptions, scatterplots, Q-Q and residual vs fitted plots were employed. In the case of the regular season data, it appeared as if the assumptions needed to create a model were met, however, for the post season data the qqplot indicated some of the quantitative variables may need to undergo transformations. 
+
+```{r, echo = FALSE, fig.cap = "Fit of regular season model versus post season model on their respective data"}
+par(mfrow=c(1,2))
+
+r_reg <- resid(Base_Model_Reg)
+qqnorm(r_reg, main = "Normal Q-Q Plot for Regular Season Model")
+qqline(r_reg)
+
+r_post <- resid(Base_Model_Post)
+qqnorm(r_post, main = "Normal Q-Q Plot for Post Season Model")
+qqline(r_post)
+
+```
+
+To transform these variables, the box-cox function was utilized in which the user is told which variables should undergo what transformation, whether that be squaring or inverting the variable for example.  For the regular and post season data, the following transformations were applied:
+
+- Regular season:
+  - $Age => Age^{-\frac{1}{2}}$
+  - $Weight => Weight^{-1}$
+  
+- Post season:
+  - $OPS => OPS^{\frac{1}{2}}$
+  - $Weight => Weight^{-1}$
+  - $Height => Height^{2}$
+  
+```{r, echo = FALSE, fig.cap = "Box-Cox graph for OPS telling us what transformation to apply to OPS in both regular and post season models"}
+par(mfrow=c(2,1))
+
+##Box-Cox transformation for regular season
+boxCox(Base_Model_Reg, family = "bcnPower", main = "Profile Log-Likelihood of OPS for Regular Season")
+
+##Box-Cox transformation for post season
+boxCox(Base_Model_Post, family = "bcnPower", main = "Profile Log-Likelihood of OPS for Post Season")
+```
+
+```{r, echo = FALSE}
+##Regular Season
+##Transforming Y variable 
+train_reg$OPS <- (train_reg$OPS)
+
+##Transforming X variables
+train_reg$Age <- (train_reg$Age)^(-0.5)
+train_reg$weight <- (train_reg$weight)^(-1)
+train_reg$height <- (train_reg$height)
+
+
+#Post Season
+##Transforming Y variable 
+train_post$OPS <- (train_post$OPS)^(0.5)
+
+##Transforming X variables
+train_post$Age <- (train_post$Age)
+train_post$weight <- (train_post$weight)^(-1)
+train_post$height <- (train_post$height)^(2)
+```
+
+```{r, echo = FALSE}
+New_Model_Reg <- lm(`OPS` ~ `Age` + `weight` + `height` + `bats`, data = train_reg)
+
+New_Model_Post <- lm(`OPS` ~ `weight` + `height`, data = train_post)
+```
+
+Once transformations were applied to both datasets, multicollinearity was checked for using the variance inflation factor, however, no variables were removed from either dataset.  Once ready, both models underwent a t-test test in order to determine which variables to remove.  In this case, any variable whose p-value was greater than 0.05 was removed,  leading to the following reduced models:
+
+- Regular Season Model
+  - $OPS = \beta_0+\beta_1*Age+\beta_2*Weight+\beta_3*Height+\beta_4*BatsL+\beta_5*BatsR$
+
+- Post Season Model
+  - $OPS = \beta_0+\beta_1*Weight+\beta_2*Height$
+  
+After the removal of predictors from the models, they were compared using a partial f-test in which it was found that in both cases the reduced models explained the data better than the original models. Finally, the testing data was fit into each model to check for any bias in the data.  No bias was discovered and the following qq plots indicate the fit of the testing and training models for both regular and post season.
+
+# Creating test models
+```{r, echo = FALSE}
+#Transforming variables indicated by box cox to satisfy conditions I & II
+
+#Regular Season
+##Transforming Y variable 
+test_reg$OPS <- (test_reg$OPS)
+
+##Transforming X variables
+test_reg$Age <- (test_reg$Age)^(-0.5)
+test_reg$weight <- (test_reg$weight)^(-1)
+test_reg$height <- (test_reg$height)
+
+
+#Post Season
+##Transforming Y variable 
+test_post$OPS <- (test_post$OPS)^(0.5)
+
+##Transforming X variables
+test_post$Age <- (test_post$Age)
+test_post$weight <- (test_post$weight)^(-1)
+test_post$height <- (test_post$height)^(2)
+```
+
+```{r, echo = FALSE}
+Test_Model_Reg <- lm(`OPS` ~ `Age` + `weight` + `height` + `bats`, data = test_reg)
+
+Test_Model_Post <- lm(`OPS` ~ `weight` + `height`, data = test_post)
+```
+
+```{r, echo = FALSE, fig.cap = "Q-Q plots comparing the training and testing models for both regular and post season"}
+par(mfrow=c(2,2))
+
+#Training data
+#Regular season
+rr_reg <- resid(New_Model_Reg)
+qqnorm(rr_reg, main = "Normal Q-Q Plot for Training Regular Season Model")
+qqline(rr_reg)
+
+#Post season
+rr_post <- resid(New_Model_Post)
+qqnorm(rr_post, main = "Normal Q-Q Plot for Training Post Season Model")
+qqline(rr_post)
+
+#Testing data
+##Regular season
+t_reg <- resid(Test_Model_Reg)
+qqnorm(t_reg, main = "Normal Q-Q Plot for Testing Regular Season Model")
+qqline(t_reg)
+
+##Post season
+t_post <- resid(Test_Model_Post)
+qqnorm(t_post, main = "Normal Q-Q Plot for Testing Post Season Model")
+qqline(t_post)
+```
+
+\newpage
+
+# Results
+|    Based on the model, physical characteristics that influence batting prowess in the regular season are age, height, weight and what side you bat on.  Below are plots showing the relationship between continuous predictors and OPS for the regular season:
+
+```{r, echo = FALSE, fig.cap = "Added Variable plots indicating the one-to-one relationship of predictors with OPS in the regular season model"}
+##Visualizing relationship of each predictor with dependent variable in regular season
+avPlots(Test_Model_Reg, main = "One-to-One relationships of predictors with OPS")
+```
+
+These graphs indicate the relationship of the respective predictor with OPS provided all other predictors remain constant.  For example given all other predictors remain constant, a 1 unit increase in weight will result in a decrease in OPS.  From these graphs we can see that in the regular season, the older and heavier you are, the worse your batting becomes while the taller you are, the better your batting.  Unfortunately, when analyzing how what side you bat on it is difficult to see their relationship with OPS.  According to the summary of the model, left handed batters have a slight advantage over right handed batters as there is a more significant increase in OPS given to a left handed batter given two players are otherwise identical. Interestingly, players that could bat on both sides appear to have a lower OPS on average.  This can also be visualized in the following boxplot comparing left and right handed hitters' OPS:
+
+```{r, echo = FALSE, fig.cap = "Boxplot of each batting side's OPS IQR and mean"}
+ggplot(test_reg, aes(x=bats, y=OPS, main = "Boxplot of Batting Side's relationship with OPS")) + 
+  geom_boxplot()
+```
+
+|    When looking at what makes a good batter in the post season, there are decidely less factors as the only 2 predictors for OPS included in the model were weight and height.  Their relationship can be visualized through the following plots
+
+```{r, echo = FALSE, fig.cap = "Added Variable plots indicating the one-to-one relationship of predictors with OPS in the post season model"}
+##Visualizing relationship of each predictor with dependent variable in regular season
+avPlots(Test_Model_Post, main = "One-to-One relationships of predictors with OPS")
+```
+
+These graphs once again illustrate the relationship between predictors and independent variables given all other predictors remain constant.  This indicates that in the post season, the taller and heavier you are, the worse a player's OPS will be.  For weight this follows the same trend as in the regular season, however, for height we see a negative relationship which is contrary to what we see in the regular season.  It should be noted, the number of at bats a player has during the post season is significantly lower than during the regular season.  This can lead to skewed batting stats as the law of large numbers is not able to average out players' inflated or deflated batting stats.  Based on this, it is possible that the post season model is not a reliable predictor of how a player will perform in come the start of playoffs.
+
+# Discussion
+|    Based on the determined models, it appears that physical characteristics that predict regular season batting success don't necessarily guarantee post season batting success.  We can see that being tall, young and a left or right handed batter will increase your OPS while being heavier and older will decrease it.  Interestingly, the common misconception of baseball players being overweight and out of shape [@citefat] can be disproved in both models as the lower a player's weight, the higher their OPS.  In the post season, however, we see that regular season predictors do not matter as age, and batting side do not significantly affect OPS while being taller and heavier decreases players' OPS.  This could be explained by taller hitters having larger strike zones [@citezone], giving more skilled pitchers (typically found in the post season) a larger strike zone to throw at.  In an interesting study, it was found that taller players generally are struck out more by low balls than average height players [@citezone].  Could the fact that taller players face a higher quality of pitching along with a larger strike zone diminish their supposed batting advantage in the regular season?  Moreover, the advantage of being a "lefty" in baseball has been well documented as they are able to hit a ball a little more out in front than other batters [@citeleft] which allows for greater distance on their hits.  When looking at the playoffs, however, this advantage seems to disappear.  In order to better understand the change in batting prowess from regular to post season, further analysis on how pitching changes is needed as batting and pitching are linked to one another.
+
+
+# Appendix
+
+## Key Words
+
+- OPS: A measurement of how good a player is at slugging and getting on base
+- OBS: A measure of a player reaching one of the 4 plates without getting out
+- SLG: A measurement of how many bases a player records for every at-bat
+- At Bat: when a player goes up to bat
+- Bats: Side a player bats on (left, right or both)
+- Throws: Arm a player throws with (left or right)
+- Strike Zone: The zone that a player pitches at for a strike. Any area outside this zone does not count as a strike
+- Regular Season: The portion of a baseball season where teams play games to determine place in standings
+- Post Season: The portion of a baseball season where only the best teams remain and compete for the world series
+
+## Rules of Baseball
+
+|    If interested or confused with how baseball works, the rules of the game can be found at the MLB official website [@citerules].
+
+
+\newpage
+
+# References
+<div id="refs"></dev>
