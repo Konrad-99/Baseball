@@ -3,7 +3,8 @@ This paper explores what physical characteristics can predict batting success in
 
 ## Repo Structure
 - Script folder contains files needed for reproducibility
-- Data as well as cleaning for this paper can be found in input folder 
+- Data can be found in input folder 
+- Cleaning and simulations can be found in scripts folder
 - Results can be found in output folder
 
 ## Data
