@@ -1,0 +1,411 @@
+---
+title: "Baseball Data Prep"
+author: "James Richards"
+date: "18/04/2022"
+output: pdf_document
+---
+
+# Loading packages needed for data cleaning
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(janitor)
+library(dplyr)
+library(readxl)
+library(kableExtra)
+library(rstatix)
+library(car)
+library(caTools)
+```
+
+# Regular Season
+
+## Loading in data
+```{r, echo = FALSE}
+#Installing data
+Batting <- Batting
+People <- People
+Batting_post <- BattingPost
+```
+
+
+## Combining data
+```{r}
+Data <- left_join(People, Batting, by = "playerID")
+```
+
+
+## Calculating OPS and age
+```{r}
+Data$OBP <- ((Data$H + Data$BB + Data$HBP)/(Data$AB + Data$BB + Data$HBP + Data$SF))
+
+Data$SLG <- ((Data$H + (2 * Data$`X2B`) + (3 * Data$`X3B`) + (4 * Data$HR))/(Data$AB))
+
+Data$OPS <- Data$OBP + Data$SLG
+
+Data$Age <- (Data$yearID - Data$birthYear)
+```
+
+
+## Removing NA and 0 for certain variables 
+```{r}
+Data <- Data[Data$AB >= 502, ]
+Data <- Data[!is.na(Data$OPS),]
+Data <- Data[!is.na(Data$Age),]
+Data <- Data[!is.na(Data$weight),]
+Data <- Data[!is.na(Data$height),]
+Data <- Data[!is.na(Data$bats),]
+Data <- Data[!is.na(Data$throws),]
+```
+
+
+## Saving players used
+```{r}
+player_id_list <- list(Data$playerID)
+```
+
+
+## Keeping data to be used
+```{r}
+Data = subset(Data, select = c("Age", "weight", "height", "bats", "throws", "OPS"))
+```
+
+
+
+# Post Season
+
+## Combining data
+```{r}
+Data_post <- left_join(People, Batting_post, by = "playerID")
+```
+
+
+## Calculating OPS and age
+```{r}
+Data_post$OBP <- ((Data_post$H + Data_post$BB + Data_post$HBP)/(Data_post$AB + Data_post$BB + Data_post$HBP + Data_post$SF))
+
+Data_post$SLG <- ((Data_post$H + (2 * Data_post$`X2B`) + (3 * Data_post$`X3B`) + (4 * Data_post$HR))/(Data_post$AB))
+
+Data_post$OPS <- Data_post$OBP + Data_post$SLG
+
+Data_post$Age <- (Data_post$yearID - Data_post$birthYear)
+```
+
+
+## Removing NA and 0 for certain variables 
+```{r}
+Data_post <- Data_post[! Data_post$playerID %in% player_id_list, ]
+Data_post <- Data_post[!is.na(Data_post$OPS),]
+Data_post <- Data_post[!is.na(Data_post$Age),]
+Data_post <- Data_post[!is.na(Data_post$weight),]
+Data_post <- Data_post[!is.na(Data_post$height),]
+Data_post <- Data_post[!is.na(Data_post$bats),]
+Data_post <- Data_post[!is.na(Data_post$throws),]
+```
+
+
+## Keeping data to be used
+```{r}
+Data_post = subset(Data_post, select = c("Age", "weight", "height", "bats", "throws", "OPS"))
+```
+
+
+# Model building
+
+##Splitting data sets into test and training datasets
+```{r, echo = FALSE}
+set.seed(101)
+#Regular season train and test dataset
+dt_reg = sort(sample(nrow(Data), nrow(Data)*.5))
+train_reg <- Data[dt_reg,]
+test_reg <- Data[-dt_reg,]
+
+train_reg <- data.frame(train_reg)
+test_reg <- data.frame(test_reg)
+
+#Post season train and test dataset
+dt_post = sort(sample(nrow(Data_post), nrow(Data_post)*.5))
+train_post <- Data_post[dt_post,]
+test_post <- Data_post[-dt_post,]
+
+train_post <- data.frame(train_post)
+test_post <- data.frame(test_post)
+```
+
+
+
+##Creating base models 
+```{r, echo = FALSE}
+Base_Model_Reg <- lm(`OPS` ~ `Age` + `weight` + `height` + `bats` + `throws`, data = train_reg)
+
+Base_Model_Post <- lm(`OPS` ~ `Age` + `weight` + `height` + `bats` + `throws`, data = train_post)
+```
+
+
+
+##Checking that Checking conditions I & II and assumptions are met
+```{r, echo = FALSE}
+pairs(train_reg[, c("weight", "height", "OPS")])
+pairs(train_post[, c("weight", "height", "OPS")])
+```
+
+
+```{r, echo = FALSE}
+plot(train_reg$`OPS` ~ fitted(Base_Model_Reg), main = "Y versus Y-hat regular season", xlab = "Y-hat", ylab = "Y")
+abline(a = 0, b = 1)
+lines(lowess(train_reg$`OPS` ~ fitted(Base_Model_Reg)), lty = 2)
+
+plot(train_post$`OPS` ~ fitted(Base_Model_Post), main = "Y versus Y-hat post season", xlab = "Y-hat", ylab = "Y")
+abline(a = 0, b = 1)
+lines(lowess(train_post$`OPS` ~ fitted(Base_Model_Post)), lty = 2)
+```
+
+
+```{r, echo = FALSE}
+##Q-Q Plot for regular season training dataset
+r_reg <- resid(Base_Model_Reg)
+plot(r_reg ~ fitted(Base_Model_Reg), main = "Res vs. Fitted", xlab = "Fitted", ylab = "Residuals")
+plot(r_reg ~ train_reg$`weight`)
+plot(r_reg ~ train_reg$`height`)
+plot(r_reg ~ train_reg$`OPS`)
+
+qqnorm(r_reg)
+qqline(r_reg)
+```
+
+
+```{r, echo = FALSE}
+##Q-Q Plot for post season training dataset
+r_post <- resid(Base_Model_Post)
+plot(r_post ~ fitted(Base_Model_Post), main = "Res vs. Fitted", xlab = "Fitted", ylab = "Residuals")
+plot(r_post ~ train_post$`weight`)
+plot(r_post ~ train_post$`height`)
+plot(r_post ~ train_post$`OPS`)
+
+qqnorm(r_post)
+qqline(r_post)
+```
+
+
+
+##Transforming variables to satisfy assumptions if needed
+```{r, echo = TRUE}
+##Box-Cox transformation for regular season
+boxCox(Base_Model_Reg, family = "bcnPower")
+
+##Box-Cox transformation for post season
+boxCox(Base_Model_Post, family = "bcnPower")
+```
+
+
+```{r, echo = TRUE}
+##Box-Cox transformation for quantitative predictor variable regular season
+p_reg <- powerTransform(cbind(train_reg[,1], train_reg[,2], train_reg[,3]) ~ 1, family = "bcnPower")
+summary(p_reg)
+
+p_post <- powerTransform(cbind(train_post[,1], train_post[,2], train_post[,3]) ~ 1, family = "bcnPower")
+summary(p_post)
+```
+
+
+```{r, echo = FALSE}
+##Regular Season
+##Transforming Y variable 
+train_reg$OPS <- (train_reg$OPS)
+
+##Transforming X variables
+train_reg$Age <- (train_reg$Age)^(-0.5)
+train_reg$weight <- (train_reg$weight)^(-1)
+train_reg$height <- (train_reg$height)
+
+
+#Post Season
+##Transforming Y variable 
+train_post$OPS <- (train_post$OPS)^(0.5)
+
+##Transforming X variables
+train_post$Age <- (train_post$Age)
+train_post$weight <- (train_post$weight)^(-1)
+train_post$height <- (train_post$height)^(2)
+```
+
+
+##Checking for multicollinearity
+```{r, echo = FALSE}
+##Using VIF function to check for multicollinearity
+vif(Base_Model_Reg)
+
+vif(Base_Model_Post)
+```
+
+
+```{r, echo = FALSE, fig.width=48, fig.height=27}
+##Determining which predictors have perfect one-to-one relationships
+pairs(train_reg[, c("Age", "weight", "height")])
+
+pairs(train_post[, c("Age", "weight", "height")])
+```
+
+
+```{r, echo = FALSE}
+##Creating correlation matrix for data frames in regular season
+train_numeric_reg = subset(train_reg, select = c(Age, weight, height))
+train_numeric <- data.frame(train_numeric_reg)
+cor(train_numeric_reg)
+
+##Creating correlation matrix for data frames in post season
+train_numeric_post = subset(train_post, select = c(Age, weight, height))
+train_numeric <- data.frame(train_numeric_post)
+cor(train_numeric_post)
+```
+
+
+##Performing t-test
+```{r, echo = FALSE}
+##t-test on finalized base model for regular season
+summary(Base_Model_Reg)
+
+##t-test on finalized base model for post season
+summary(Base_Model_Post)
+```
+
+
+##creating reduced models
+```{r, echo = FALSE}
+New_Model_Reg <- lm(`OPS` ~ `Age` + `weight` + `height` + `bats`, data = train_reg)
+
+New_Model_Post <- lm(`OPS` ~ `weight` + `height`, data = train_post)
+```
+
+
+##partial f-tests between base and reduced models
+```{r, echo = FALSE}
+#Test between regular season models
+anova(New_Model_Reg, Base_Model_Reg)
+
+#Test between post season models
+anova(New_Model_Post, Base_Model_Post)
+```
+
+
+##Models
+```{r, echo = FALSE}
+New_Model_Reg <- lm(`OPS` ~ `Age` + `weight` + `height` + `bats`, data = train_reg)
+
+New_Model_Post <- lm(`OPS` ~ `weight` + `height`, data = train_post)
+```
+
+
+##Performing t-test again
+```{r, echo = FALSE}
+##t-test on finalized base model for regular season
+summary(New_Model_Reg)
+
+##t-test on finalized base model for post season
+summary(New_Model_Post)
+```
+
+
+
+# Creating test models
+```{r, echo = FALSE}
+#Transforming variables indicated by box cox to satisfy conditions I & II
+
+#Regular Season
+##Transforming Y variable 
+test_reg$OPS <- (test_reg$OPS)
+
+##Transforming X variables
+test_reg$Age <- (test_reg$Age)^(-0.5)
+test_reg$weight <- (test_reg$weight)^(-1)
+test_reg$height <- (test_reg$height)
+
+
+#Post Season
+##Transforming Y variable 
+test_post$OPS <- (test_post$OPS)^(0.5)
+
+##Transforming X variables
+test_post$Age <- (test_post$Age)
+test_post$weight <- (test_post$weight)^(-1)
+test_post$height <- (test_post$height)^(2)
+```
+
+```{r, echo = FALSE}
+Test_Model_Reg <- lm(`OPS` ~ `Age` + `weight` + `height` + `bats`, data = test_reg)
+
+Test_Model_Post <- lm(`OPS` ~ `weight` + `height`, data = test_post)
+```
+
+
+# Looking at fit of models
+
+##Final Model fit in training dataset
+```{r, echo = FALSE}
+#Regular season final model
+plot(train_reg$`OPS` ~ fitted(New_Model_Reg), main = "Y versus Y-hat", xlab = "Y-hat", ylab = "Y")
+abline(a = 0, b = 1)
+lines(lowess(train_reg$`OPS` ~ fitted(New_Model_Reg)), lty = 2)
+
+#Post season final model
+plot(train_post$`OPS` ~ fitted(New_Model_Post), main = "Y versus Y-hat", xlab = "Y-hat", ylab = "Y")
+abline(a = 0, b = 1)
+lines(lowess(train_post$`OPS` ~ fitted(New_Model_Post)), lty = 2)
+```
+
+
+```{r, echo = FALSE}
+#Regular season
+rr_reg <- resid(New_Model_Reg)
+plot(rr_reg ~ fitted(New_Model_Reg), main = "Res vs. Fitted", xlab = "Fitted", ylab = "Residuals")
+
+qqnorm(rr_reg)
+qqline(rr_reg)
+
+#Post season
+rr_post <- resid(New_Model_Post)
+plot(rr_post ~ fitted(New_Model_Post), main = "Res vs. Fitted", xlab = "Fitted", ylab = "Residuals")
+
+qqnorm(rr_post)
+qqline(rr_post)
+```
+
+
+##Final Model fit in testing dataset
+```{r, echo = FALSE}
+#Regular season final model
+plot(test_reg$`OPS` ~ fitted(Test_Model_Reg), main = "Y versus Y-hat", xlab = "Y-hat", ylab = "Y")
+abline(a = 0, b = 1)
+lines(lowess(test_reg$`OPS` ~ fitted(Test_Model_Reg)), lty = 2)
+
+#Post season final model
+plot(test_post$`OPS` ~ fitted(Test_Model_Post), main = "Y versus Y-hat", xlab = "Y-hat", ylab = "Y")
+abline(a = 0, b = 1)
+lines(lowess(test_post$`OPS` ~ fitted(Test_Model_Post)), lty = 2)
+```
+
+
+```{r, echo = FALSE}
+#Regular season
+t_reg <- resid(Test_Model_Reg)
+plot(t_reg ~ fitted(Test_Model_Reg), main = "Res vs. Fitted", xlab = "Fitted", ylab = "Residuals")
+
+qqnorm(t_reg)
+qqline(t_reg)
+
+#Post season
+t_post <- resid(Test_Model_Post)
+plot(t_post ~ fitted(Test_Model_Post), main = "Res vs. Fitted", xlab = "Fitted", ylab = "Residuals")
+
+qqnorm(t_post)
+qqline(t_post)
+```
+
+
+# Summaries of final models
+```{r, echo = FALSE}
+##t-test on finalized base model for regular season
+summary(Test_Model_Reg)
+
+##t-test on finalized base model for post season
+summary(Test_Model_Post)
+```
